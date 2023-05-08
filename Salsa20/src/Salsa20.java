@@ -1,7 +1,8 @@
+import java.io.UnsupportedEncodingException;
 import java.math.BigInteger;
 
 public class Salsa20 {
-    private static long MOD = 4294967296l;
+//    private static long MOD = 4294967296L;
     private Byte[] secretKey;
     private Byte[] encryptedMessage;
 
@@ -10,14 +11,21 @@ public class Salsa20 {
     }
 
     public String encryptedMessageAsString() {
-        StringBuilder stringBuilder = new StringBuilder();
-        for(int i = 0; i < encryptedMessage.length; i++) {
-            stringBuilder.append(encryptedMessage[i]);
+        byte[] encryptedMessageBytes = new byte[encryptedMessage.length];
+        BigInteger iAsBigInteger = new BigInteger(String.valueOf(0));             // as stated before the use of BigInteger is for the purposes of providing
+        for (Byte B:encryptedMessage) {                                             // a theoretical message length of 2^70 - 1. But because of the nature of arrays
+            encryptedMessageBytes[Integer.parseInt(iAsBigInteger.toString())] = B;  // and Java as a language, this is almost certainly impossible in practice
+            iAsBigInteger = iAsBigInteger.add(new BigInteger("1"));
         }
-        String encryptedMessageString = stringBuilder.toString();
-        return encryptedMessageString;
+
+        try {
+            String encryptedMessageString = new String(encryptedMessageBytes, "ISO-8859-1");
+            return encryptedMessageString;
+        } catch (Exception e) {
+            return e.getMessage().toString();
+        }
     }
-    private Byte[] getEncryptedMessage() {
+    public Byte[] getEncryptedMessage() { //should really be private but i need it for demonstration purposes
         return encryptedMessage;
     }
 
@@ -75,8 +83,9 @@ public class Salsa20 {
 
                 for(int j = 0; j < 64; j++) {
                     BigInteger sumOfIandJ = new BigInteger("0");
-                    sumOfIandJ.add(iAsBigInteger);
-                    sumOfIandJ.add(new BigInteger(String.valueOf(j)));
+                    sumOfIandJ = sumOfIandJ.add(iAsBigInteger);
+                    String jAsString = String.valueOf(j);
+                    sumOfIandJ = sumOfIandJ.add(new BigInteger(jAsString));
                     if(sumOfIandJ.compareTo(originalMessageLength) < 0) {
                         encryptedMessage[i+j] = xor(secretKey[j], originalMessage[i+j]);
                     } else {
@@ -88,8 +97,8 @@ public class Salsa20 {
                 if(flag) {
                     break;
                 }
-                i++;
-                iAsBigInteger.add(new BigInteger("1"));
+                i+=64;
+                iAsBigInteger = iAsBigInteger.add(new BigInteger("64"));
             }
         } else {
             return;
@@ -181,24 +190,31 @@ public class Salsa20 {
     private Byte[] inverseLittleEndian(Integer y) {
         Byte[] result = new Byte[4];
         result[0] = (byte) (y % Math.pow(2,8));
-        result[1] = (byte) ((y / Math.pow(2,8)) % Math.pow(2,16));
-        result[2] = (byte) ((y / Math.pow(2,16)) % Math.pow(2,24));
+        result[1] = (byte) ((y / Math.pow(2,8)) % Math.pow(2,8));
+        result[2] = (byte) ((y / Math.pow(2,16)) % Math.pow(2,8));
         result[3] = (byte) (y / Math.pow(2,24));
         return result;
     }
     private Integer littleEndian(Byte[] b) {
-        Integer result = (int) (((b[0] + Math.pow(2,8)*b[1] + Math.pow(2,16)*b[2] + Math.pow(2,24)*b[3]))%MOD);
+        //Integer[] bAsInts = {Byte.toUnsignedInt(b[0]),Byte.toUnsignedInt(b[1]),Byte.toUnsignedInt(b[2]),Byte.toUnsignedInt(b[3])};
+        Integer result = 0;
+        result += b[0]; //bAsInts[0]
+        result += (int) Math.pow(2,8)*b[1];
+        result += (int) Math.pow(2,16)*b[2];
+        result += (int) Math.pow(2,24)*b[3];
         return result;
     }
-    private void doubleRound(Integer[] x) {
+    public void doubleRound(Integer[] x) {
         columnRound(x);
         rowRound(x);
     }
     private void columnRound(Integer[] x) {
         Integer[] y = {x[0], x[4], x[8], x[12], x[1], x[5], x[9], x[13], x[2], x[6], x[10], x[14], x[3], x[7], x[11], x[15]};
         rowRound(y);
-        for(int i = 0; i < 16; i++) {
-            x[i] = y[i];
+        for(int i = 0; i < 4; i++) {
+            for(int j = 0; j < 4; j++) {
+                x[i+4*j] = y[j+4*i];
+            }
         }
     }
 
@@ -229,10 +245,10 @@ public class Salsa20 {
         y[10] = tmp_2[0];
         y[11] = tmp_2[1];
         /* third row */
-        y[12] = tmp_2[1];
-        y[13] = tmp_2[2];
-        y[14] = tmp_2[3];
-        y[15] = tmp_2[0];
+        y[12] = tmp_3[1];
+        y[13] = tmp_3[2];
+        y[14] = tmp_3[3];
+        y[15] = tmp_3[0];
     }
     private void quarterRound(Integer[] y) {
         y[1] = xor(y[1],Integer.rotateLeft(new Integer(sum(y[0],y[3])),7));
@@ -242,15 +258,15 @@ public class Salsa20 {
     }
 
     private Integer sum(Integer x, Integer y) {
-        return new Integer((int) ((x + y) % MOD));
-    }
-
+        return new Integer((x + y)); // no need for mod even though i originally implemented it, in computers the addition operation of 2 32 bit integers is by definition addition in GF(2^32)
+    }                                // this means that overflow will naturally insure that the largest value we get is 2^32 - 1.
+                                     // (because we don't care about the sign, otherwise it would be between -2^31 and 2^31 - 1 )
     private Integer xor(Integer x, Integer y) {
         return new Integer(x ^ y); // no need for mod, because using bitwise xor will never create a number bigger than the numbers entered
     }
 
     private Byte xor(Byte x, Byte y) {
-        byte result = (byte) ((byte) (x.byteValue())^(y.byteValue()));
+        byte result = (byte) ((x.byteValue())^(y.byteValue()));
         return new Byte(result); // no need for mod, because using bitwise xor will never create a number bigger than the numbers entered
     }
 }
